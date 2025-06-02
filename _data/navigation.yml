@@ -35,3 +35,9 @@ header:
 
   - title:      Test
     url:        /posts/shanxi
+
+spots:
+  - title: test
+    children:
+      - title:  test
+        url:    /posts/shanxi # url = permalinks
