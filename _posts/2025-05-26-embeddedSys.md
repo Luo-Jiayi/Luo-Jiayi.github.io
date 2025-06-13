@@ -74,6 +74,7 @@ D--bottomup-->C;
 - RISC-V
 
 ## 设备与输入输出
+
 ```mermaid
 graph LR;
 A[CPU]
@@ -120,9 +121,9 @@ void output_handler() {
 
 ```mermaid
 graph LR;
-A[User mode: user program]
-B[Supervisor mode: OS]
-C[Machine mode: BIOS]
+A["User mode: user program"]
+B["Supervisor mode: OS"]
+C["Machine mode: BIOS"]
 A--trap-->B;
 B--trap-->C;
 B--sret-->A;
@@ -134,16 +135,18 @@ C--mret-->B;
   - 异步中断(interrupt): 设备发起的中断, 如键盘输入、定时器中断等
   - 自陷(trap): exception和interrupt请求更高的特权级处理的机制
 
+这似乎是riscv的
 ```mermaid
 graph LR;
-A[Interrupts]
-B[Exceptions]
-C[trap]
-D[trap handler]
+A["Interrupts"]
+B["Exceptions"]
+C["trap"]
+D["trap handler"]
 A-->C;
 B-->C;
 C-->D;
 ```
+
 
 - 中断处理的两大机制:
   - **中断向量表(interrupt vectors)**: 中断处理程序的入口地址存储在中断向量表中,CPU根据中断来源查找对应的处理程序. 设备中断时向CPU发送中断号,CPU查找中断向量表,跳转到对应的处理程序
@@ -163,6 +166,24 @@ C-->D;
 - 分为FIQ (Fast Interrupt Request)和IRQ (Normal Interrupt Request), FIQ优先级更高,可以打断IRQ
 - **CPU需要保存PC, 复制CPSR到SPSR, 设置CPSR来记录中断, 设置PC为中断向量表中的地址; handler最后需要逆操作, 恢复PC和CPSR, 清除中断屏蔽标志**
 - 最坏的情况响应中断就需要27个周期: 2个周期同步外部请求, 20个周期完成手头的指令, 3个周期data abort, 2个周期进入中断处理程序
+
+这也许是arm的
+```mermaid
+graph LR;
+A[FIQ]
+B[IQR]
+C[Interrupt]
+D[Exception]
+E[Trap]
+F["Async Exception"]
+G["Sync Exception"]
+A-->C;
+B-->C;
+C-->F;
+E-->G;
+G-->D;
+F-->D;
+```
 
 ## 内存机制
 **存储器的层次结构具有这样的特点: 顶层小而快(贵啊), 底层大而慢, 实现大而快的等效效果.**
@@ -226,7 +247,7 @@ $\text{performance} = \frac{\text{time}}{\text{prog.}} = \frac{\text{instruction
   - 电源门控
   - 时钟门控
 - 异步设计(自定时)
-- 缓存
+- 缓存(考虑cache太小/太大会怎么样)
 
 具体如何评估CPU活动是否指示着进入低功耗模式?
 - 可能损失的时间和能量
@@ -307,13 +328,24 @@ Symbol table '.symtab' contains 28 entries:
 
 ### 加载 load
 
-## 调试
-- host用cross debugger, 打断点(subroutine call to the monitor, like interrupt); MCU接个in-circuit emulator
-- logic analyzer (oscilloscope array)
-- boundary scan: 将特定信号注入扫描链检测硬件是否故障
-- real-time debug中, 驱动的bug可能会导致UB且time-dependent
+## 调试与验证
+- 调试方法
+  - host用cross debugger, 打断点(subroutine call to the monitor, like interrupt); MCU接个in-circuit emulator
+  - logic analyzer (oscilloscope array)
+  - boundary scan: 将特定信号注入扫描链检测硬件是否故障
+  - real-time debug中, 驱动的bug可能会导致UB且time-dependent
+- 验证方法
+  - black box: 源码不可见, 大量样例
+    - 随机测试
+    - 回归测试
+  - clear (white) box: 对照代码测, 这样可以看到具体的运行路径与中间值(controllability & observability), 可以保证测试覆盖率
+    - 圈复杂度 (Cyclomatic complexity): 衡量模块判定结构的复杂度
+    - 分支测试 (Branch testing): 测试所有分支跳转的条件true & false
+    - 域测试 (Domain testing): 理想情况测试所有输入域, 重点测边缘
+    - 循环测试 (Loop testing): 对循环, 可以完全跳过/跑一次/跑多次
 
-## 优化
+
+## 评估与优化
 程序性能评估需要综合考虑硬件系统的特性(流水线,缓存)与软件程序的行为
 - measurement-driven
   - 评估性能可以通过仿真,真机跑分(样例程序计算耗时); execution time = program path + instruction timing, 其中不同输入影响path跳转, instruction timing则取决于指令类型与硬件特性(例如,乘除存取指令需要多个时钟,不适应流水线与缓存策略的指令组合需要额外的时间)
@@ -325,6 +357,11 @@ Symbol table '.symtab' contains 28 entries:
   - 适合有外界实时输入的系统
 
 举例, 大数组的缓存冲突 5-88
+
+程序的尺寸虽对计算机不算什么瓶颈了, 也是嵌入式必须考虑的
+- 优化尺寸可以节省内存, 从而节省功耗
+- data方面, 多复用数据, 用指令生成数据
+- instruction方面, 避免内联函数(这样没有跳转不复用指令块), 选RISC的CPU, 用专用指令
 
 ### 数据结构
 5-46
@@ -373,9 +410,9 @@ Symbol table '.symtab' contains 28 entries:
 进程的状态跳转:
 ```mermaid
 graph LR;
-A[执行 execute]
-B[等待 wait]
-C[就绪 ready]
+A["执行 execute"]
+B["等待 wait"]
+C["就绪 ready"]
 A--"need data"-->B;
 B--"get data&CPU"-->A;
 B--"get data"-->C;
@@ -384,33 +421,37 @@ A--"preempted"-->C;
 C--"get CPU"-->A;
 ```
 
-讨论进程的安排与性能评估:
-- CPU在偷懒吗?
-  - 总共$n$个任务, $\tau_i$为第i个进程的周期, $T_i$为需要的计算时间
-  - CPU的利用率 $U=\frac{CPU\ time\ for\ useful\ work}{total\ available\ CPU\ time}$
-- CPU来得及吗?
-  - 及时完成任务可行性要求 $\tau_1 \ge \sum_{i}{T_i}$
-  - 超周期 Hyperperiod: 任务周期的最小公倍数(least common multiple), 
-- 调度策略
-  - **Rate-monotonic scheduling (RMS)**: 静态调度, 周期越短赋予越高优先级. CPU的利用率又可以表示为 $U= \sum{\left( \frac{T_i}{\tau_i} \right)}=\frac{\sum{(T_i\prod{\tau}/\tau_i)}}{hyperperiod} < n(2^{1/n}-1)$, 注定无望100%
-  - **Earliest-deadline-first (EDF)**: 动态优先级, 越来不及的赋予越高优先级, 理论可以100%利用率, 但可能赶不上ddl, 还费资源
-  - **周期静态(Cyclostatic) / 时分多址(TDMA)**: 基于LCM调度, CPU利用率不变(且高), 不能处理意外负载. CPU的利用率又可以表示为 $U= \frac{\sum{T_i}}{TDMA\ period}$
-  - **轮询(Round-robin)**: 按照相同的顺序检测各个进程是否就绪,如果当前进程不干,就会直接执行下一个. 调度周期即超周期. 可以处理很多甚至意外负载
-- 要是真的调度不好了? (参考slack为负怎么办)
-  - ($\tau_i$) 改ddl
-  - ($T_i$) 减少进程需要的计算时间
-  - ($f_{clk}$) 换个好CPU
-- 还有一些乱七八糟的问题
-  - 优先级反转 priority inversion: 比如, 低优先级进程霸着I/O, 高有效级跑不了, 导致的死锁
-  - 数据依赖
-  - 上下文切换时间
+- 讨论进程的安排与性能评估:
+  - CPU在偷懒吗?
+    - 总共$n$个任务, $\tau_i$为第i个进程的周期, $T_i$为需要的计算时间
+    - CPU的利用率 $U=\frac{CPU\ time\ for\ useful\ work}{total\ available\ CPU\ time}$
+  - CPU来得及吗?
+    - 及时完成任务可行性要求 $\tau_1 \ge \sum_{i}{T_i}$
+    - 超周期 Hyperperiod: 任务周期的最小公倍数(least common multiple), 
+  - 调度策略
+    - **Rate-monotonic scheduling (RMS)**: 静态调度, 周期越短赋予越高优先级. CPU的利用率又可以表示为 $U= \sum{\left( \frac{T_i}{\tau_i} \right)}=\frac{\sum{(T_i\prod{\tau}/\tau_i)}}{hyperperiod} < n(2^{1/n}-1)$, 注定无望100%
+    - **Earliest-deadline-first (EDF)**: 动态优先级, 越来不及的赋予越高优先级, 理论可以100%利用率, 但可能赶不上ddl, 还费资源
+    - **周期静态(Cyclostatic) / 时分多址(TDMA)**: 基于LCM调度, CPU利用率不变(且高), 不能处理意外负载. CPU的利用率又可以表示为 $U= \frac{\sum{T_i}}{TDMA\ period}$
+    - **轮询(Round-robin)**: 按照相同的顺序检测各个进程是否就绪,如果当前进程不干,就会直接执行下一个. 调度周期即超周期. 可以处理很多甚至意外负载
+  - 要是真的调度不好了? (参考slack为负怎么办)
+    - ($\tau_i$) 改ddl
+    - ($T_i$) 减少进程需要的计算时间
+    - ($f_{clk}$) 换个好CPU
+  - 还有一些乱七八糟的问题
+    - 优先级反转 priority inversion: 比如, 低优先级进程霸着I/O, 高有效级跑不了, 导致的死锁
+    - 数据依赖
+    - 上下文切换时间
 
+
+- 进程间通信 6-53 6-85: 进程通过OS通信传数
+  - blocking(发送的进程等回复), non-blocking(发送的进程继续)
+  - 共享内存
+    - 2个进程同时写一个内存位置的冲突 -> 原子操作(atomic test-and-set)不可分割, 只能全部失败/全部成功; SWP指令读内存,测试,写入
+  - 通道传信
+UML
 
 出现的术语: task, process, thread, multi-rate, real-time, release time, deadline(hard/soft/firm), rate & period, initiation time & interval, hyperperiod, response time, critical instant & region, semaphores
 {:.warning}
-
-进程间通信 6-53 6-85
-UML
 
 ## 系统性能分析
 - 通信带宽: 
@@ -419,8 +460,9 @@ UML
   - 通信的瓶颈在于内存还是总线?计算
   - 通过提高并行性提高效率: 一次传多个, DMA, fpga
 - 能量与功耗
-  - 5-91
-  - 6-98
+  - 一般来说, high performance = low energy, speed-energy之间没有什么trade-off的余地. 主要考虑: 寄存器的高效使用, 缓存尺寸与冲突, 展开循环与函数嵌套(内联), 流水线优化
+  - 操作系统通过关掉一些单元来降低功耗, 而关与开的操作也是额外耗能的. 因此需要合理调节, 简单的功耗管理策略有 request-driven 与 predictive shutdown, 前者一旦有请求就开启, 后者预测多久会有请求
+  - Advanced Configuration Power Interface: 在mechanical off, soft off, sleeping state, working state状态之间切换
 - RTOS: 6-95
   
 
