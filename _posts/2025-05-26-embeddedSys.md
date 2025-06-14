@@ -38,10 +38,22 @@ D--bottomup-->C;
 ```
 
 - trade-offs:
-  - 设计本身: power(energy), performance(?), cost, 
-  - 开发过程: time-to-market
+  - 设计本身: power(energy), performance(?), manufacturing cost
+  - 开发过程: time-to-market, design cost
   - 使用过程: flexibility, reliability, scalability, complexity, etc.
 
+- methodology
+  - 软件开发:
+    - waterfall model: `requirement <-> arch <-> code <-> test <-> maintenance`
+    - spiral model: 在每个阶段 `requirement + design + test`
+    - successive refinement model: 不断修正 `spec -> arch -> design -> build -> test`
+  - 软硬件协同开发
+    - Hierarchical HW/SW flow: 抽象层细分
+    - concurrent engineering: 多任务并行
+  - 质量管理 (quality assurance)
+    - 验证 (Verification)
+    - 测试 (Test)
+    - Design review
 
 ---
 
@@ -50,6 +62,13 @@ D--bottomup-->C;
 - General-purpose processors (GP/MCU/单片机)
 - Application-Specific Instruction-set Processors (ASIP): 可编程的指令集处理器,介于通用处理器和ASIC之间
 - Application-Specific Integrated Circuit (ASIC): 全定制
+
+主要讨论的是通用处理器. 处理器简单表示为时序逻辑与组合逻辑的模型, 时序逻辑是其中的寄存器与pc(还有外面的主存), 组合逻辑是ALU等计算单元, 一条指令经过取指,解指/译码,执行,写回的过程
+- 取指: 从主存取指令(形式为opcode(rd,op1,op2,imm),其中op1,op2,imm不一定有)
+- 解指: 弄明白要干什么, rd,op1这些都是什么
+- 执行: 算出来result = opcode(...)
+- 写回: 寄存器rd = result
+一条指令结束, 时序逻辑更新
 
 ## 计算机架构
 - von Neumann架构: 存储程序计算机,数据和指令存储在同一存储器中,CPU通过总线访问存储器
@@ -63,7 +82,7 @@ D--bottomup-->C;
 |每条指令可以完成多种操作|每条指令完成单一操作(利于流水)|
 |多种寻址模式|load/store访存|
 
-寻址模式有立即寻址(直接在指令中给出操作数的值,也就是立即数), 寄存器寻址(操作数在寄存器中), 直接寻址(操作数的地址在指令中以立即数的形式给出), 间接寻址(地址存储在寄存器或内存中), 相对地址(操作数的内存地址=pc+立即数给出的偏移量); RISC
+寻址模式有立即寻址(直接在指令中给出操作数的值,也就是立即数), 寄存器寻址(操作数在寄存器中), 直接寻址(操作数的地址在指令中以立即数的形式给出), 间接寻址(地址存储在寄存器或内存中), 相对地址(操作数的内存地址=pc+立即数给出的偏移量); RISC支持的少点
 {:.success}
 
 一个好的架构设计出来后,可以根据不同的需求和场景,做出不同的实现版本(微架构),比如不同的主频、总线宽度、缓存大小等
@@ -74,21 +93,24 @@ D--bottomup-->C;
 - RISC-V
 
 ## 设备与输入输出
+CPU与设备通过总线沟通
 
 ```mermaid
 graph LR;
-A[CPU]
-B[status reg]
-C[data reg]
-D[analog device]
-A<-->B;
-A<-->C;
-B<-->D;
-C<-->D;
+A["CPU"]
+B["status reg"]
+C["data reg"]
+D["analog device"]
+A-->B;
+B-->A;
+A-->C;
+C-->A;
+B-->D;
+C-->D;
 ```
 
-- x86有专用的I/O指令(in, out)
-- ARM,RISCV通过内存映射I/O (memory-mapped I/O)来访问设备
+- x86有专用的I/O指令(in, out), 这是端口映射
+- ARM,RISCV通过内存映射I/O (memory-mapped I/O)来访问设备, 使用load/store指令
 
 由于CPU一直等待设备的信号很低效,因此可以让设备在需要的时候发起中断,CPU做出对应的响应. 
 ```c
@@ -136,6 +158,7 @@ C--mret-->B;
   - 自陷(trap): exception和interrupt请求更高的特权级处理的机制
 
 这似乎是riscv的
+
 ```mermaid
 graph LR;
 A["Interrupts"]
@@ -188,6 +211,21 @@ F-->D;
 ## 内存机制
 **存储器的层次结构具有这样的特点: 顶层小而快(贵啊), 底层大而慢, 实现大而快的等效效果.**
 
+```mermaid
+graph LR;
+A["register(CPU)"]
+B["cache(CPU SRAM)"]
+C["memory(DRAM)"]
+D["disk(device)"]
+A-->B;
+B-->A;
+B-->C;
+C-->B;
+C-->D;
+D-->C;
+```
+
+
 ### 缓存
 访问内存缓慢, 因此需要缓存放指令和数据, 省的CPU苦等. (不能真去 load/store 内存啊)
 
@@ -215,13 +253,18 @@ F-->D;
 - **替换策略(降低失效率):** 随机替换, 最近最少使用(LRU), 先进先出(FIFO), 最不经常使用(LFU)
 
 ### 虚拟内存
-- 分段与分页
-  - segment由page组成, segment是逻辑上的, page是物理上的
+操作系统将不常用的数据页存储在硬盘上, 通过将程序的逻辑地址(上层看到的地址)空间映射到物理内存(内存条上的实际地址), 允许程序在运行时使用比实际物理内存更大的地址空间. 
 
-缺页: 要的页不在内存中. 段错误: 
+- 分段与分页
+  - segment由page组成
+  - page: 将物理内存划分为固定大小的块
+    - 页表记录物理地址页与逻辑地址页的映射
+    - TLB (Translation Lookaside Buffer): 用于加速虚拟地址到物理地址的转换, 存储最近使用的页表项
+  - segment: 将程序的逻辑地址空间划分为不同大小的段,每个段代表程序的一个逻辑部分,如代码段,数据段,堆栈段
+
+缺页: 要的虚拟内存页不在物理内存中. 段错误: 没给程序分这段, 基本就是指针越界了
 {:.error}
 
-- TLB (Translation Lookaside Buffer): 用于加速虚拟地址到物理地址的转换, 存储最近使用的页表项
 
 ## 评估处理器设计
 
@@ -256,6 +299,7 @@ $\text{performance} = \frac{\text{time}}{\text{prog.}} = \frac{\text{instruction
 ---
 
 # 运行在处理器上的软件
+CPU看到的软件就是指令, 大的数据块(数组)会被放进内存, 小的数据(局部变量)会出现在指令的立即数与寄存器. 内存里的指令与大数据块会被刷新到缓存, 因此写程序需要考虑缓存的心情
 
 ## 描述控制与数据
 
@@ -271,6 +315,7 @@ for (f=0, ibuff=circ_buff_head, ic=0;\
 ```
 
 ### (Control-)Data Flow Graph
+控制-数据流程图
 
 ```mermaid
 flowchart TD
@@ -284,6 +329,7 @@ flowchart TD
 ## 代码上板
 
 ### 交叉编译 cross-compile
+流程
 
 ```mermaid
 graph LR;
@@ -369,7 +415,10 @@ Symbol table '.symtab' contains 28 entries:
 ---
 
 # 软硬件协同开发
+
 ## 硬件平台: 外设与互连
+外设和处理器挂在总线上, 分布式系统
+
 ### 总线
 总线是一组共用的线和统一的协议, 通信CPU与外设或者外设与外设. 复杂系统会有多条总线, 分别连接不同性能需求,不同功能类别的设备.
 > 比如, CPU和内存通过高速总线(AHB)连接, 而低速I/O设备通过低速总线(APB)连接
@@ -385,10 +434,18 @@ Symbol table '.symtab' contains 28 entries:
 ![]({{ "/assets/post_images/circuit/axi4.png" | relative_url }})
 
 - DMA: CPU设置DMA控制器, DMA控制器直接访问内存, CPU不参与数据传输, DMA传输期间总线被占用
+
+### 仲裁
+总线是公用的. 但是显然不能大家同时用. 那么某一个时刻究竟归谁用?
+- fixed: 总线的访问权按照预先定义的顺序分配给各PE, 适用于实时性要求高的
+- round-robin: 轮换各PE的使用优先级, 适用于公平性要求高的
+一根总线显然不大好用了. CrossBar(Xbar)是一个大对照表, 交叉连接诸方向, 快速处理多个数据流, non-blocking但是大; Multi-stage networks是开关级联, blocking但小
+
 ### 存储
-- DRAM: Dynamic RAM is dense, requires refresh
-- SRAM: Static RAM is faster, less dense, consumes more power
-- flash: a field-programmable ROM, electrically erasable, must be block erased; Random access, but write/erase is much slower than read; NOR flash is more flexible (read by word), NAND flash is more dense (read by page)
+- SRAM: 缓存, Static RAM is faster, less dense, consumes more power
+- DRAM: 内存, Dynamic RAM is dense, requires refresh
+- flash: 比如U盘,单片机里的闪存, a field-programmable ROM, electrically erasable, must be block erased; Random access, but write/erase is much slower than read; NOR flash is more flexible (read by word), NAND flash is more dense (read by page)
+
 ### I/O设备
 
 ## 软件系统: 抽象层与精妙控制
@@ -442,12 +499,13 @@ C--"get CPU"-->A;
     - 数据依赖
     - 上下文切换时间
 
+![]({{ "/assets/post_images/circuit/ipc.png" | relative_url }})
 
 - 进程间通信 6-53 6-85: 进程通过OS通信传数
   - blocking(发送的进程等回复), non-blocking(发送的进程继续)
-  - 共享内存
+  - 共享内存 (shared memory)
     - 2个进程同时写一个内存位置的冲突 -> 原子操作(atomic test-and-set)不可分割, 只能全部失败/全部成功; SWP指令读内存,测试,写入
-  - 通道传信
+  - 通道传信 (message passing)
 UML
 
 出现的术语: task, process, thread, multi-rate, real-time, release time, deadline(hard/soft/firm), rate & period, initiation time & interval, hyperperiod, response time, critical instant & region, semaphores
@@ -468,4 +526,34 @@ UML
 
 ---
 
-# 多处理器
+# 加速
+加速在于并行. 如果存在多个CPU核, 线程真的是并行的; 如果是单核, 线程是时分复用表现出的并行效果. 通过软件调整程序使之适于并行, 即调度; 通过硬件的功能分离使之支持并行
+并行需要担心数据依赖与冲突, 因为系统终究不是完全并行的, 重叠部分会出问题. 需要从软件硬件, 从上下层次, 去考虑, 比如指令,I/O,总线与内存
+
+## 多处理器
+为什么要多处理器? 通过分离通用功能与特殊功能, 各适其所, 就不需要为提升一点性能付出昂贵成本, CPU的任务调度更合理, 突破单CPU的利用率与性能瓶颈, 优化功耗; 此外, 实时I/O与数据流更有优势
+
+多处理器的通信可以参考多进程通信
+
+> 加速器与协处理器有什么区别
+> 协处理器执行被发送的指令
+> 加速器则如设备, 受状态寄存器控制
+
+## 评估加速器
+ Effects of parallelism (and lack of it):
+ Processes.
+ CPU and bus.
+ Multiple processors.
+
+加速器需要花时间传输输入输出数据, 运行计算, 与主CPU同步, 总执行时间可以表示为
+$$\begin{array}{l}
+	t_{acc}&		=t_{in}&		+t_{ex}&		+t_{out}\\
+	&		input&		compute&		output\\
+\end{array}$$
+对$n$轮计算, 加速效果(speedup)为$S=n\left( t_{CPU}-t_{acc} \right)$
+
+这里可以参考进程部分, 单线程即blocking, CPU等待加速器算完, 总时间为所有路径之和; 多线程即non-blocking, CPU继续运行, 总时间取决于最长路径. 这是需要软件调度的
+
+7-29 给出了例子
+一旦输入数据全部准备好(而且输出不会修改其他计算需要的输入), 这个计算就可以开始; 限制条件来自n个计算单元与1个通信/内存/IO, 既然通信这些的总时间不能削减, 就边算边传, 争取让总时间=通信时间
+{:.success}
