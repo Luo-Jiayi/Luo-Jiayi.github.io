@@ -4,6 +4,9 @@ tags: ["软硬件协同", "嵌入式", "电路"]
 ---
 
 # 嵌入式系统与设计方法学
+未经测试的模块都是错误的
+错误必须尽早解决
+模块的选用与系统的优化必须基于评估
 
 ## 什么是嵌入式系统
 Embedded computing system: Any device that includes a programmable computer but is not itself a general-purpose computer
@@ -161,13 +164,18 @@ C--mret-->B;
 
 ```mermaid
 graph LR;
-A["Interrupts"]
-B["Exceptions"]
+A["Async. Exceptions"]
+B["Sync. Exceptions"]
 C["trap"]
 D["trap handler"]
+E["I/O interrupt"]
+F["timer interrupt"]
+G["software interrupt"]
 A-->C;
 B-->C;
 C-->D;
+E-->A; F-->A;
+G-->B;
 ```
 
 
@@ -236,15 +244,21 @@ D-->C;
   - capacity miss: 缓存不够大
 - (假设写穿) 访存延迟 = 访存操作数目/程序 * 缓存失效率 * 失效代价
 
-缓存数据的地址:
 
-|tag|index|block offset|
-|---|---|---|
-|选择数据块(hit?)|选择组|选择数据|
+|cache set|cache block|tag|field|valid|
+|---|---|---|---|---|
+|N * cache block (N-way/bank)|缓存块包括|映射的是哪块内存|存数据|有效标志|
 
-- **映射结构:** 相连提升缓存命中率,但更复杂; 数据块太大失效代价增加
-  - 直接映射(direct mapped)/一路组相连: 数据块映射到缓存的确定位置, cache地址 = (块地址) mod (cache中数据块数量)
-  - 组相连(set associative): 数据块映射到确定组的任意位置, cache组数 = (块地址) mod (cache中组数)
+|address|tag|index|block offset|
+|---|---|---|---|
+|缓存地址包括|选择数据块(hit?)|选择组|选择数据|
+
+流程: CPU需要访问某个数据时, 首先根据地址的 index 部分选择一个组; 在选定的组内, 检查每个缓存块的 tag，以确定是否有匹配的数据块;如果找到匹配的块(hit!), 直接读取 offset 的数据；如果没有(miss!), 从主存中加载数据更新缓存
+{:.success}
+
+- **映射结构:** 相连提升缓存命中率,但更复杂且访问慢; 数据块太大失效代价增加
+  - 直接映射(direct mapped)/一路组相连: cache地址相同的数据块都映射到缓存的一个确定位置, cache地址 = (块地址) mod (cache中数据块数量)
+  - 组相连(set associative): 原来放在同一个位置的数据块现在映射到确定组的任意路, cache组数 = (块地址) mod (cache中组数)
   - 全相连(fully associative): 数据块可以映射到缓存的任意位置, 需要查找所有缓存块
 - **写操作**
   - 写穿透(write-through): 每次写操作都更新缓存和主存, 费时. 
@@ -370,7 +384,7 @@ Symbol table '.symtab' contains 28 entries:
 ### 链接 link
 把目标代码和已经存在的机器语言模块（如函数库或其他程序）等“拼接”起来, 调整地址
 - 静态链接(.a)
-- 动态链接(.so), procedure linkage
+- 动态链接(.so, e.g.运行时库), procedure linkage(函数地址动态解析)
 
 ### 加载 load
 
@@ -478,26 +492,27 @@ A--"preempted"-->C;
 C--"get CPU"-->A;
 ```
 
-- 讨论进程的安排与性能评估:
+进程的切换是上下文切换和调度相关的评估, 但是下面的计算默认不考虑overhead
+- 讨论进程的安排
   - CPU在偷懒吗?
-    - 总共$n$个任务, $\tau_i$为第i个进程的周期, $T_i$为需要的计算时间
+    - 总共$n$个任务, $\tau_i$为第i个进程的周期, $T_i$为需要的计算时间(每$\tau_i$必须执行$T_i$的任务i)
     - CPU的利用率 $U=\frac{CPU\ time\ for\ useful\ work}{total\ available\ CPU\ time}$
   - CPU来得及吗?
     - 及时完成任务可行性要求 $\tau_1 \ge \sum_{i}{T_i}$
-    - 超周期 Hyperperiod: 任务周期的最小公倍数(least common multiple), 
-  - 调度策略
-    - **Rate-monotonic scheduling (RMS)**: 静态调度, 周期越短赋予越高优先级. CPU的利用率又可以表示为 $U= \sum{\left( \frac{T_i}{\tau_i} \right)}=\frac{\sum{(T_i\prod{\tau}/\tau_i)}}{hyperperiod} < n(2^{1/n}-1)$, 注定无望100%
+    - 超周期 Hyperperiod: 任务周期的最小公倍数(least common multiple). 从一个critical instant开始, 如果一个超周期可行, 就全部可行
+  - 调度策略: 分为抢占(preemption)与轮询(poll)
+    - **Rate-monotonic scheduling (RMS)**: 静态调度, 周期越短赋予越高优先级. CPU的利用率又可以表示为 $U= \sum{\left( \frac{T_i}{\tau_i} \right)}=\frac{\sum{(CPU \ time\ of\ i)}}{hyperperiod} < n(2^{1/n}-1)$, 注定无望100%
     - **Earliest-deadline-first (EDF)**: 动态优先级, 越来不及的赋予越高优先级, 理论可以100%利用率, 但可能赶不上ddl, 还费资源
     - **周期静态(Cyclostatic) / 时分多址(TDMA)**: 基于LCM调度, CPU利用率不变(且高), 不能处理意外负载. CPU的利用率又可以表示为 $U= \frac{\sum{T_i}}{TDMA\ period}$
     - **轮询(Round-robin)**: 按照相同的顺序检测各个进程是否就绪,如果当前进程不干,就会直接执行下一个. 调度周期即超周期. 可以处理很多甚至意外负载
-  - 要是真的调度不好了? (参考slack为负怎么办)
-    - ($\tau_i$) 改ddl
-    - ($T_i$) 减少进程需要的计算时间
-    - ($f_{clk}$) 换个好CPU
-  - 还有一些乱七八糟的问题
-    - 优先级反转 priority inversion: 比如, 低优先级进程霸着I/O, 高有效级跑不了, 导致的死锁
-    - 数据依赖
-    - 上下文切换时间
+- 要是真的调度不好了? (参考slack为负怎么办)
+  - ($\tau_i$) 改ddl
+  - ($T_i$) 减少进程需要的计算时间
+  - ($f_{clk}$) 换个好CPU
+- 还有一些乱七八糟的问题
+  - 优先级反转 priority inversion: 低优先级进程由于原子性霸着共享的资源, 高优先级跑不了, 导致的死锁
+  - 数据依赖
+  - 上下文切换时间
 
 ![]({{ "/assets/post_images/circuit/ipc.png" | relative_url }})
 
@@ -506,6 +521,7 @@ C--"get CPU"-->A;
   - 共享内存 (shared memory)
     - 2个进程同时写一个内存位置的冲突 -> 原子操作(atomic test-and-set)不可分割, 只能全部失败/全部成功; SWP指令读内存,测试,写入
   - 通道传信 (message passing)
+
 UML
 
 出现的术语: task, process, thread, multi-rate, real-time, release time, deadline(hard/soft/firm), rate & period, initiation time & interval, hyperperiod, response time, critical instant & region, semaphores
@@ -518,7 +534,7 @@ UML
   - 通信的瓶颈在于内存还是总线?计算
   - 通过提高并行性提高效率: 一次传多个, DMA, fpga
 - 能量与功耗
-  - 一般来说, high performance = low energy, speed-energy之间没有什么trade-off的余地. 主要考虑: 寄存器的高效使用, 缓存尺寸与冲突, 展开循环与函数嵌套(内联), 流水线优化
+  - 一般来说, 软件high performance = low energy, speed-energy之间没有什么trade-off的余地. 主要考虑: 寄存器的高效使用, 缓存尺寸与冲突, 展开循环与函数嵌套(内联), 流水线优化
   - 操作系统通过关掉一些单元来降低功耗, 而关与开的操作也是额外耗能的. 因此需要合理调节, 简单的功耗管理策略有 request-driven 与 predictive shutdown, 前者一旦有请求就开启, 后者预测多久会有请求
   - Advanced Configuration Power Interface: 在mechanical off, soft off, sleeping state, working state状态之间切换
 - RTOS: 6-95
@@ -540,11 +556,6 @@ UML
 > 加速器则如设备, 受状态寄存器控制
 
 ## 评估加速器
- Effects of parallelism (and lack of it):
- Processes.
- CPU and bus.
- Multiple processors.
-
 加速器需要花时间传输输入输出数据, 运行计算, 与主CPU同步, 总执行时间可以表示为
 $$\begin{array}{l}
 	t_{acc}&		=t_{in}&		+t_{ex}&		+t_{out}\\
