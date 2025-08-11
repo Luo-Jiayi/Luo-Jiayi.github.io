@@ -37,7 +37,14 @@ header:
     url:        /posts/shanxi
 
 spots:
-  - title: test
+  - title: 建筑
+    children:
+      - title:  殿堂
+        url:    /posts/shanxi/frame # url = permalinks
+    children:
+      - title:  塔
+        url:    /posts/shanxi/pagodas # url = permalinks
+  - title: 塑像
     children:
       - title:  test
-        url:    /posts/shanxi # url = permalinks
+        url:    /posts/shanxi/statue # url = permalinks
